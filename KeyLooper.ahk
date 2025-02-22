@@ -18,21 +18,32 @@ global isRunning := false
 global keySettings := Map()
 global SetupGui
 global timeFactor := 1.0  ; 添加时间系数全局变量
+global startKey := "F1"    ; 添加启动按键设置
+global stopKey := "F2"     ; 添加停止按键设置
 
 ; 加载配置
 LoadConfig() {
-    global keySettings, configPath, timeFactor, timeFactorInput
+    global keySettings, configPath, timeFactor, timeFactorInput, startKey, stopKey, startKeyInput, stopKeyInput
     try {
         if FileExist(configPath) {
             ; 读取时间系数
             timeFactor := Float(IniRead(configPath, "Settings", "timeFactor", "1.0"))
             timeFactorInput.Text := timeFactor
 
+            ; 读取控制按键
+            startKey := IniRead(configPath, "Controls", "startKey", "F1")
+            stopKey := IniRead(configPath, "Controls", "stopKey", "F2")
+            startKeyInput.Text := startKey
+            stopKeyInput.Text := stopKey
+            
+            ; 更新热键绑定
+            UpdateHotkeys()
+
             ; 读取所有section
             IniRead_sections := IniRead(configPath)
             Loop Parse, IniRead_sections, "`n", "`r" {
                 key := A_LoopField
-                if (key != "" && key != "Settings") {
+                if (key != "" && key != "Settings" && key != "Controls") {
                     before := IniRead(configPath, key, "before", "0")
                     after := IniRead(configPath, key, "after", "0")
                     keySettings[key] := {before: Integer(before), after: Integer(after)}
@@ -44,7 +55,7 @@ LoadConfig() {
 
 ; 保存配置
 SaveConfig() {
-    global keySettings, configPath, timeFactor
+    global keySettings, configPath, timeFactor, startKey, stopKey
     try {
         ; 先删除已存在的配置文件
         if FileExist(configPath)
@@ -52,6 +63,10 @@ SaveConfig() {
             
         ; 保存时间系数
         IniWrite(timeFactor, configPath, "Settings", "timeFactor")
+        
+        ; 保存控制按键
+        IniWrite(startKey, configPath, "Controls", "startKey")
+        IniWrite(stopKey, configPath, "Controls", "stopKey")
         
         ; 保存每个按键的设置
         for key, settings in keySettings {
@@ -80,28 +95,61 @@ SetupGui.Add("Text", "x+20", "时间系数(倍):")
 timeFactorInput := SetupGui.Add("Edit", "w60", "1.0")
 SetupGui.Add("Button", "w100", "应用系数").OnEvent("Click", ApplyTimeFactor)
 
+; 添加控制按键设置
+SetupGui.Add("Text", "xm", "启动按键:")
+startKeyInput := SetupGui.Add("Edit", "w50", startKey)
+SetupGui.Add("Text", "x+20", "停止按键:")
+stopKeyInput := SetupGui.Add("Edit", "w50", stopKey)
+SetupGui.Add("Button", "x+10 w100", "更新控制按键").OnEvent("Click", UpdateControlKeys)
+
 ; 添加按钮
 SetupGui.Add("Button", "w100", "添加按键").OnEvent("Click", AddKey)
 SetupGui.Add("Button", "w100 x+10", "删除选中").OnEvent("Click", RemoveKey)
 
 SetupGui.Show()
 
-; F1开始循环，F2停止循环
-F1::{
-    global isRunning
-    global SetupGui
+; 更新控制按键
+UpdateControlKeys(*) {
+    global startKey, stopKey
+    newStartKey := startKeyInput.Text
+    newStopKey := stopKeyInput.Text
+    
+    if (newStartKey != "" && newStopKey != "") {
+        startKey := newStartKey
+        stopKey := newStopKey
+        UpdateHotkeys()
+        SaveConfig()
+    }
+}
+
+; 更新热键绑定
+UpdateHotkeys() {
+    global startKey, stopKey
+    
+    ; 移除旧的热键绑定
+    try Hotkey startKey, "Off"
+    try Hotkey stopKey, "Off"
+    
+    ; 添加新的热键绑定
+    Hotkey startKey, StartLoop
+    Hotkey stopKey, StopLoop
+}
+
+; 启动循环函数
+StartLoop(*) {
+    global isRunning, SetupGui
     if !isRunning {
         isRunning := true
         try {
             SetupGui.Title := "按键循环设置 [运行中]"
-            StartLoop()
+            InitLoop()  ; 重命名原来的StartLoop为InitLoop
         }
     }
 }
 
-F2::{
-    global isRunning
-    global SetupGui
+; 停止循环函数
+StopLoop(*) {
+    global isRunning, SetupGui
     isRunning := false
     try {
         SetupGui.Title := "按键循环设置 [已停止]"
@@ -140,8 +188,8 @@ RefreshListView() {
     }
 }
 
-; 开始循环
-StartLoop() {
+; 初始化循环（原StartLoop函数重命名）
+InitLoop() {
 	global isRunning, keySettings, keyStates
 	; 初始化按键状态Map
 	keyStates := Map()
